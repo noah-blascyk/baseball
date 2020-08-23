@@ -158,6 +158,8 @@ class Date:
 
     def __init__(self, weekday: str, month, day: int, year: int):
         self.weekday        = weekday
+        self.cum_wins       = None
+        self.cum_losses     = None
         if type(month) is str:
             self.month      = month
             self.month_int  = self.month_dict.get(month)
@@ -211,7 +213,8 @@ class Date:
         ret = f'{self.weekday}, {self.month} {self.day}, {self.year}'
         for i in self.games:
             ret += '\n\t\t' + str(i)
-        ret += f'\tRecord for the day (straight up): {self.algo_wins}-{self.algo_losses}-{self.algo_no_call}'
+        ret += f'\tRecord for the day (straight up): {self.algo_wins}-{self.algo_losses}-{self.algo_no_call}\n'
+        ret += f'\tCumulative algo record (straight up): {self.cum_wins}-{self.cum_losses} ({self.cum_wins/(self.cum_wins+self.cum_losses):#.3f})'
         return ret + '\n'
 
 
@@ -348,11 +351,11 @@ class LeagueSeason(HTMLParser):
                 j.calcLines()
                 if j.winner is not None:
                     if j.winner == j.home_team:
-                        self.simple_elo[j.home_team] += 32 * (1 - j.home_prob)
-                        self.simple_elo[j.away_team] -= 32 * (1 - j.home_prob)
+                        self.simple_elo[j.home_team] += 10 * (1 - j.home_prob)
+                        self.simple_elo[j.away_team] -= 10 * (1 - j.home_prob)
                     else:
-                        self.simple_elo[j.home_team] -= 32 * j.home_prob
-                        self.simple_elo[j.away_team] += 32 * j.home_prob
+                        self.simple_elo[j.home_team] -= 10 * j.home_prob
+                        self.simple_elo[j.away_team] += 10 * j.home_prob
 
 
     def printEloRankings(self):
@@ -371,6 +374,8 @@ class LeagueSeason(HTMLParser):
             j.calcRecord()
             self.algo_wins += j.algo_wins
             self.algo_losses += j.algo_losses
+            j.cum_wins = self.algo_wins
+            j.cum_losses = self.algo_losses
             self.algo_no_call += j.algo_no_call
             self.home_wins += j.home_wins
             self.home_losses += j.home_losses
