@@ -1,6 +1,7 @@
 from datetime import date
 from html.parser import HTMLParser
 import requests
+import csv
 
 # TODO: Program to scrape more info, as needed
 
@@ -36,11 +37,23 @@ class Game:
             self.winner         = away_team
             self.loser          = home_team
             self.game_played    = True
+        self.away_open_line     = 100
+        self.away_close_line    = 100
+        self.home_open_line     = 100
+        self.home_close_line    = 100
+        self.away_open_prob     = 0.5
+        self.away_close_prob    = 0.5
+        self.home_open_prob     = 0.5
+        self.home_close_prob    = 0.5
+        self.choice_open        = "N"
+        self.choice_close       = "N"
+        self.open_return        = 0
+        self.close_return       = 0
 
     
-    def calcLines(self):
+    def calcLines(self, home_field_factor = 0.0435044):
         self.home_prob_simple = 1 / (1 + 10 ** ((self.away_elo-self.home_elo)/400))
-        self.home_prob = self.home_prob_simple + 0.04
+        self.home_prob = self.home_prob_simple + home_field_factor
         if self.home_prob > 0.5:
             self.away_line = self.home_prob / (1 - self.home_prob) * 100
             self.home_line = -1 * self.home_prob / (1 - self.home_prob) * 100
@@ -50,16 +63,16 @@ class Game:
         else:
             self.home_line = 100
             self.away_line = 100
+        self.away_prob = 1 - self.home_prob
         self.home_dec = 1/self.home_prob
-        self.away_dec = 1/(1-self.home_prob)
+        self.away_dec = 1/self.away_prob
 
 
     def __str__(self):
-        self.calcLines()
         try:
-            return f'{self.away_elo:<5.0f} {self.away_team:<22} {self.away_score:<3} {(1-self.home_prob)*100:<3.1f} {self.away_line:<+4.0f} {self.away_dec:<5.3f} @ {self.home_elo:<5.0f} {self.home_team:<22} {self.home_score:<3} {self.home_prob*100:<3.1f} {self.home_line:<+4.0f} {self.home_dec:<5.3f}'
+            return f'{self.away_elo:<5.0f} {self.away_team:<22} {self.away_score:<3} {self.away_prob*100:<3.1f} {self.away_open_prob*100:<3.1f} {self.away_close_prob*100:<3.1f} {self.away_dec:<.3f} @ {self.home_elo:<5.0f} {self.home_team:<22} {self.home_score:<3} {self.home_prob*100:<3.1f} {self.home_open_prob*100:<3.1f} {self.home_close_prob*100:<3.1f} {self.home_dec:<.3f} {self.choice_open} {self.choice_close} {self.open_return:7.2f} {self.close_return:7.2f}'
         except TypeError:
-            return f'{self.away_elo:<5.0f} {self.away_team:<26} {(1-self.home_prob)*100:<3.1f} {self.away_line:<+4.0f} {self.away_dec:<5.3f} @ {self.home_elo:<5.0f} {self.home_team:<26} {self.home_prob*100:<3.1f} {self.home_line:<+4.0f} {self.home_dec:<5.3f}'
+            return f'{self.away_elo:<5.0f} {self.away_team:<26} {self.away_prob*100:<3.1f} {self.away_open_prob*100:<3.1f} {self.away_close_prob*100:<3.1f} {self.away_dec:<.3f}  @ {self.home_elo:<5.0f} {self.home_team:<26} {self.home_prob*100:<3.1f} {self.home_open_prob*100:<3.1f} {self.home_close_prob*100:<3.1f} {self.home_dec:<.3f} {self.choice_open} {self.choice_close} {self.open_return:7.2f} {self.close_return:7.2f}'
 
 
 
@@ -160,6 +173,8 @@ class Date:
         self.weekday        = weekday
         self.cum_wins       = None
         self.cum_losses     = None
+        self.cum_home_wins  = None
+        self.cum_home_losses= None
         if type(month) is str:
             self.month      = month
             self.month_int  = self.month_dict.get(month)
@@ -172,6 +187,10 @@ class Date:
         self.year           = year
         self.games          = []
         self.weekday_int    = self.weekday_dict.get(weekday)
+        self.open_return    = 0
+        self.close_return   = 0
+        self.cum_close_return = 0
+        self.cum_open_return = 0
 
 
     def calcRecord(self):
@@ -181,7 +200,6 @@ class Date:
         self.home_wins = 0
         self.home_losses = 0
         for j in self.games:
-            j.calcLines()
             if j.home_prob > 0.5:
                 if j.winner == j.home_team:
                     self.home_wins += 1
@@ -206,6 +224,8 @@ class Date:
                     self.home_wins += 1
                 elif j.winner == j.away_team:
                     self.home_losses += 1
+            self.open_return += j.open_return
+            self.close_return += j.close_return
 
 
     def __str__(self):
@@ -213,8 +233,10 @@ class Date:
         ret = f'{self.weekday}, {self.month} {self.day}, {self.year}'
         for i in self.games:
             ret += '\n\t\t' + str(i)
-        ret += f'\tRecord for the day (straight up): {self.algo_wins}-{self.algo_losses}-{self.algo_no_call}\n'
-        ret += f'\tCumulative algo record (straight up): {self.cum_wins}-{self.cum_losses} ({self.cum_wins/(self.cum_wins+self.cum_losses):#.3f})'
+        ret += f'\n\tReturn for the day: open: {self.open_return:10.2f} close: {self.close_return:10.2f}'
+        ret += f'\n\tCumulative return: open: {self.cum_open_return:10.2f} close: {self.cum_close_return:10.2f}'
+        ret += f'\n\tRecord for the day (straight up): {self.algo_wins}-{self.algo_losses}-{self.algo_no_call}'
+        ret += f'\n\tCumulative algo record (straight up): {self.cum_wins}-{self.cum_losses} ({self.cum_wins/(self.cum_wins+self.cum_losses):#.3f})'
         return ret + '\n'
 
 
@@ -234,7 +256,43 @@ class LeagueSeason(HTMLParser):
         sched_html: the html contents of the schedule page.
     '''
 
-    def __init__(self, year: int = 2020):
+    team_dict = {
+        "LAD":  "Los Angeles Dodgers",
+        "NYY":  "New York Yankees",
+        "MIN":  "Minnesota Twins",
+        "TAM":  "Tampa Bay Rays",
+        "ATL":  "Atlanta Braves",
+        "NYM":  "New York Mets",
+        "DET":  "Detroit Tigers",
+        "OAK":  "Oakland Athletics",
+        "SFO":  "San Francisco Giants",
+        "SFG":  "San Francisco Giants",
+        "SEA":  "Seattle Mariners",
+        "KAN":  "Kansas City Royals",
+        "TEX":  "Texas Rangers",
+        "CIN":  "Cincinnati Reds",
+        "LAA":  "Los Angeles Angels",
+        "TOR":  "Toronto Blue Jays",
+        "MIA":  "Miami Marlins",
+        "CLE":  "Cleveland Indians",
+        "COL":  "Colorado Rockies",
+        "ARI":  "Arizona D'Backs",
+        "PHI":  "Philadelphia Phillies",
+        "STL":  "St. Louis Cardinals",
+        "BOS":  "Boston Red Sox",
+        "BAL":  "Baltimore Orioles",
+        "MIL":  "Milwaukee Brewers",
+        "CWS":  "Chicago White Sox",
+        "HOU":  "Houston Astros",
+        "PIT":  "Pittsburgh Pirates",
+        "SDG":  "San Diego Padres",
+        "CHC":  "Chicago Cubs",
+        "CUB":  "Chicago Cubs",
+        "WAS":  "Washington Nationals",
+        "LOS":  "Los Angeles Dodgers"
+    }
+
+    def __init__(self, year: int = 2021, home_field_factor: float = 0.0435044, k: float = 10):
         self.year               = year
         self.dates              = []
         self.simple_elo         = {}
@@ -253,7 +311,8 @@ class LeagueSeason(HTMLParser):
         self.reset()
 
         self.scrape()
-        self.simpleEloCalc()
+        self.calcLines(home_field_factor, k)
+        self.addLines()
         self.calcRecord()
 
 
@@ -334,11 +393,18 @@ class LeagueSeason(HTMLParser):
         self.feed(self.sched_html)
 
 
-    def simpleEloCalc(self):
+    def calcLines(self, home_field_factor, k):
         '''
         Calculate the Elo of every team for the entire season. Start them at 500.
         '''
+        self.algo_wins = 0
+        self.algo_losses = 0
+        self.algo_no_call = 0
+        self.home_wins = 0
+        self.home_losses = 0
         for i in self.dates:
+            i.cum_home_wins = self.home_wins
+            i.cum_home_losses = self.home_losses
             for j in i.games:
                 if j.home_team not in self.simple_elo:
                     self.simple_elo[j.home_team] = 500
@@ -347,16 +413,24 @@ class LeagueSeason(HTMLParser):
 
                 j.home_elo = self.simple_elo[j.home_team]
                 j.away_elo = self.simple_elo[j.away_team]
-
-                j.calcLines()
+                j.calcLines(home_field_factor)
                 if j.winner is not None:
                     if j.winner == j.home_team:
-                        self.simple_elo[j.home_team] += 10 * (1 - j.home_prob)
-                        self.simple_elo[j.away_team] -= 10 * (1 - j.home_prob)
+                        self.simple_elo[j.home_team] += k * (1 - j.home_prob)
+                        self.simple_elo[j.away_team] -= k * (1 - j.home_prob)
                     else:
-                        self.simple_elo[j.home_team] -= 10 * j.home_prob
-                        self.simple_elo[j.away_team] += 10 * j.home_prob
-
+                        self.simple_elo[j.home_team] -= k * j.home_prob
+                        self.simple_elo[j.away_team] += k * j.home_prob
+        
+            i.calcRecord()
+            self.algo_wins += i.algo_wins
+            self.algo_losses += i.algo_losses
+            i.cum_wins = self.algo_wins
+            i.cum_losses = self.algo_losses
+            self.algo_no_call += i.algo_no_call
+            self.home_wins += i.home_wins
+            self.home_losses += i.home_losses
+            
 
     def printEloRankings(self):
         sorted_elo = sorted(self.simple_elo.items(), key = lambda x: x[1], reverse = True)
@@ -370,15 +444,23 @@ class LeagueSeason(HTMLParser):
         self.algo_no_call = 0
         self.home_wins = 0
         self.home_losses = 0
+        self.open_return = 0
+        self.close_return = 0
         for j in self.dates:
+            j.cum_home_wins = self.home_wins
+            j.cum_home_losses = self.home_losses
             j.calcRecord()
             self.algo_wins += j.algo_wins
             self.algo_losses += j.algo_losses
             j.cum_wins = self.algo_wins
             j.cum_losses = self.algo_losses
+            j.cum_open_return = self.open_return
+            j.cum_close_return = self.close_return
             self.algo_no_call += j.algo_no_call
             self.home_wins += j.home_wins
             self.home_losses += j.home_losses
+            self.open_return += j.open_return
+            self.close_return += j.close_return
 
 
     def printDate(self, month: int, day: int):
@@ -387,7 +469,114 @@ class LeagueSeason(HTMLParser):
                 print(i)
             else:
                 pass
-                      
+
+
+    def addLines(self):
+        counter = True
+        if self.year != 2021:
+            with open(f"mlb odds {self.year}.csv") as csvfile:
+                odds_list = csv.reader(csvfile)
+                for row in odds_list:
+                    date_str = row[0]
+                    day = int(date_str[-2:])
+                    month = int(date_str[:-2])
+                    if counter == True:
+                        away_team = self.team_dict.get(row[3])
+                        if row[15] != "NL":
+                            away_open = float(row[15])
+                        else:
+                            away_open = 200
+                        away_close = float(row[16])
+                        if row[14] != "NL":
+                            away_score = int(row[14])
+                    elif counter == False:
+                        home_team = self.team_dict.get(row[3])
+                        if row[15] != "NL":
+                            home_open = float(row[15])
+                        else:
+                            home_open = 200
+                        home_close = float(row[16])
+                        if row[14] != "NL":
+                            home_score = int(row[14])
+
+                        for date in self.dates:
+                            if date.month_int == month and date.day == day:
+                                for game in date.games:
+                                    if game.home_team == home_team and game.away_team == away_team and game.home_score == home_score and game.away_score == away_score:
+                                        game.home_open_line = home_open
+                                        game.home_close_line = home_close
+                                        game.away_open_line = away_open
+                                        game.away_close_line = away_close
+                                        
+                                        game.home_open_prob = 1/(home_open / 100 + 1) if home_open > 0 else 1/(100 / abs(home_open) + 1)
+                                        game.home_close_prob = 1/(home_close / 100 + 1) if home_close > 0 else 1/(100 / abs(home_close) + 1)
+                                        game.away_open_prob = 1/(away_open / 100 + 1) if away_open > 0 else 1/(100 / abs(away_open) + 1)
+                                        game.away_close_prob = 1/(away_close / 100 + 1) if away_close > 0 else 1/(100 / abs(away_close) + 1)
+
+                                        if (game.home_prob - .1) > game.home_open_prob:
+                                            game.choice_open = "H"
+                                        elif (game.away_prob - .1) > game.away_open_prob:
+                                            game.choice_open = "A"
+                                        else:
+                                            game.choice_open = "N"
+
+                                        if (game.home_prob - .1) > game.home_close_prob:
+                                            game.choice_close = "H"
+                                        elif (game.away_prob - .1) > game.away_close_prob:
+                                            game.choice_close = "A"
+                                        else:
+                                            game.choice_close = "N"
+
+                                        # if date.month_int < 7 or date.month_int > 9:
+                                        #     game.choice_open = "N"
+                                        #     game.choice_close = "N"
+
+                                        if game.choice_open == "H":
+                                            if game.winner == game.home_team:
+                                                if game.home_open_line > 0:
+                                                    game.open_return = game.home_open_line
+                                                else:
+                                                    game.open_return = -1 * (100 / game.home_open_line) * 100
+                                            else:
+                                                game.open_return = -100
+                                        
+                                        if game.choice_open == "H":
+                                            if game.winner == game.home_team:
+                                                if game.home_open_line > 0:
+                                                    game.open_return = game.home_open_line
+                                                else:
+                                                    game.open_return = -1 * (100 / game.home_open_line) * 100
+                                            else:
+                                                game.open_return = -100
+                                        
+                                        if game.choice_open == "A":
+                                            if game.winner == game.away_team:
+                                                if game.away_open_line > 0:
+                                                    game.open_return = game.away_open_line
+                                                else:
+                                                    game.open_return = -1 * (100 / game.away_open_line) * 100
+                                            else:
+                                                game.open_return = -100
+
+                                        if game.choice_close == "H":
+                                            if game.winner == game.home_team:
+                                                if game.home_close_line > 0:
+                                                    game.close_return = game.home_close_line
+                                                else:
+                                                    game.close_return = -1 * (100 / game.home_close_line) * 100
+                                            else:
+                                                game.close_return = -100
+
+                                        if game.choice_close == "A":
+                                            if game.winner == game.away_team:
+                                                if game.away_close_line > 0:
+                                                    game.close_return = game.away_close_line
+                                                else:
+                                                    game.close_return = -1 * (100 / game.away_close_line) * 100
+                                            else:
+                                                game.close_return = -100
+
+                    counter = not counter
 
 
 class TeamSeason:
@@ -543,4 +732,3 @@ class TeamSeason:
             'away_losses'   :   away_losses,
             'away_played'   :   away_played
         }
-
