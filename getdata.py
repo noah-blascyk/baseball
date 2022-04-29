@@ -3,10 +3,11 @@ from html.parser import HTMLParser
 import requests
 import csv
 
-# TODO: Program to scrape more info, as needed
+import pickle
+from os.path import exists
 
 debug = True
-
+rescrape = False
 
 class Game:
     ''' 
@@ -310,9 +311,24 @@ class LeagueSeason(HTMLParser):
         self.game_process       = False
         self.reset()
 
-        self.scrape()
+        if exists(f"./historical scraped data/season-{self.year}.bdd") and not rescrape and not self.year == 2022:
+            file = open(f"./historical scraped data/season-{self.year}.bdd", "rb")
+            print(f"found data on file for the {self.year} season!")
+            tmp_season = pickle.load(file)
+            self.dates = tmp_season.dates
+            self.simple_elo = tmp_season.simple_elo
+        else:
+            self.scrape()
+            if not exists(f"./historical scraped data/season-{self.year}.bdd"):
+                file = open(f"./historical scraped data/season-{self.year}.bdd", "xb")
+            else:
+                file = open(f"./historical scraped data/season-{self.year}.bdd", "wb")
+            pickle.dump(self, file)
+
+        file.close()
+
         self.calcLines(home_field_factor, k)
-        self.addLines()
+        # self.addLines()
         self.calcRecord()
 
 
@@ -474,7 +490,7 @@ class LeagueSeason(HTMLParser):
     def addLines(self):
         counter = True
         if self.year != 2021:
-            with open(f"mlb odds {self.year}.csv") as csvfile:
+            with open(f"./historical odds/mlb odds {self.year}.csv") as csvfile:
                 odds_list = csv.reader(csvfile)
                 for row in odds_list:
                     date_str = row[0]
@@ -594,72 +610,110 @@ class TeamSeason:
         self.away_played = 0
         self.dates = []
 
-        if league_season == None:
-            if year == None:
-                self.league_season = LeagueSeason()
-                self.year = self.league_season.year
-            else:
-                self.league_season = LeagueSeason(year)
-                self.year = year
-            self.league_season.scrape()
-        else:
-            self.league_season = league_season
-
-        for i in self.league_season.dates:
-            for j in i.games:
-                if j.away_team == team or j.home_team == team:
-                    try:
-                        if self.dates[-1] != i:
-                            self.dates.append(Date(i.weekday, i.month, i.day, i.year))
-                    except IndexError:
-                        self.dates.append(Date(i.weekday, i.month, i.day, i.year))
-                    self.dates[-1].games.append(Game(j.away_team, j.away_score, j.home_team, j.home_score))
-                    if team == j.winner:
-                        self.wins += 1
-                        if team == j.home_team:
-                            self.home_wins += 1
-                        else:
-                            self.away_wins += 1
-                    elif team == j.loser:
-                        self.losses += 1
-                        if team == j.home_team:
-                            self.home_losses += 1
-                        else:
-                            self.away_losses += 1
-                    if j.game_played:
-                        self.played += 1
-                        if team == j.home_team:
-                            self.home_played += 1
-                        else:
-                            self.away_played += 1
-        
-        self.win_pct = self.wins / self.played
-        self.home_win_pct = self.home_wins / self.home_played
-        self.away_win_pct = self.away_wins / self.away_played
-        
-        if debug:
-            print(self)
-
-        self.against = {}
-        for i in self.dates:
-            for j in i.games:
-                if j.away_team != team:
-                    if j.away_team not in self.against:
-                        self.statsAgainst(j.away_team)
-                    else:
-                        pass
+        if year == None or not exists(f"./historical scraped data/team data {year}/{team}.tmd") or rescrape or year == 2022:
+            if league_season == None:
+                if year == None:
+                    self.league_season = LeagueSeason()
+                    self.year = self.league_season.year
                 else:
-                    if j.home_team not in self.against:
-                        self.statsAgainst(j.home_team)
+                    self.league_season = LeagueSeason(year)
+                    self.year = year
+                
+            else:
+                self.league_season = league_season
+
+            for i in self.league_season.dates:
+                for j in i.games:
+                    if j.away_team == team or j.home_team == team:
+                        try:
+                            if self.dates[-1] != i:
+                                self.dates.append(Date(i.weekday, i.month, i.day, i.year))
+                        except IndexError:
+                            self.dates.append(Date(i.weekday, i.month, i.day, i.year))
+                        self.dates[-1].games.append(Game(j.away_team, j.away_score, j.home_team, j.home_score))
+                        if team == j.winner:
+                            self.wins += 1
+                            if team == j.home_team:
+                                self.home_wins += 1
+                            else:
+                                self.away_wins += 1
+                        elif team == j.loser:
+                            self.losses += 1
+                            if team == j.home_team:
+                                self.home_losses += 1
+                            else:
+                                self.away_losses += 1
+                        if j.game_played:
+                            self.played += 1
+                            if team == j.home_team:
+                                self.home_played += 1
+                            else:
+                                self.away_played += 1
+                
+            try:
+                self.win_pct = float(self.wins) / self.played
+                self.home_win_pct = float(self.home_wins) / self.home_played
+                self.away_win_pct = float(self.away_wins) / self.away_played
+            except ZeroDivisionError:
+                self.win_pct = float(0)
+                self.home_win_pct = float(0)
+                self.away_win_pct = float(0)
+            
+            # if debug:
+            #     print(self)
+
+            self.against = {}
+            for i in self.dates:
+                for j in i.games:
+                    if j.away_team != team:
+                        if j.away_team not in self.against:
+                            self.statsAgainst(j.away_team)
+                        else:
+                            pass
                     else:
-                        pass
+                        if j.home_team not in self.against:
+                            self.statsAgainst(j.home_team)
+                        else:
+                            pass
+
+            if not exists(f"./historical scraped data/team data {year}/{team}.tmd"):
+                file = open(f"./historical scraped data/team data {year}/{team}.tmd", "xb")
+
+            else:
+                file = open(f"./historical scraped data/team data {year}/{team}.tmd", "wb")
+
+            pickle.dump(self, file)
+
+        else:
+            self.year = year
+            file = open(f"./historical scraped data/team data {year}/{team}.tmd", "rb")
+            print(f"Found data on file for the {year} {team}")
+            tmp = pickle.load(file)
+            self.team = team
+            self.wins = tmp.wins
+            self.home_wins = tmp.home_wins
+            self.away_wins = tmp.away_wins
+            self.losses = tmp.losses
+            self.home_losses = tmp.home_losses
+            self.away_losses = tmp.away_losses
+            self.played = tmp.played
+            self.home_played = tmp.home_played
+            self.away_played = tmp.home_played
+            self.dates = tmp.dates
+            self.against = tmp.against
+            self.win_pct = tmp.win_pct
+            self.home_win_pct = tmp.home_win_pct
+            self.away_win_pct = tmp.away_win_pct
+
+        file.close()
+        print(self)
 
 
     def __str__(self):
         return f'{self.year} {self.team} \n' +\
-            f'{self.wins}-{self.losses} ({self.win_pct:#.3}) in {self.played} games. \n' +\
-            f'{self.home_wins}-{self.home_losses} ({self.home_win_pct:#.3}) in {self.home_played} games at home. \n' +\
-            f'{self.away_wins}-{self.away_losses} ({self.away_win_pct:#.3}) in {self.away_played} games on the road.\n'
+            f'{self.wins}-{self.losses} ({self.win_pct}) in {self.played} games. \n' +\
+            f'{self.home_wins}-{self.home_losses} ({self.home_win_pct}) in {self.home_played} games at home. \n' +\
+            f'{self.away_wins}-{self.away_losses} ({self.away_win_pct}) in {self.away_played} games on the road.\n'
     
 
     def statsAgainst(self, other_team: str):
@@ -709,17 +763,17 @@ class TeamSeason:
             # for j in i.games
         # for i in self.dates
 
-        if debug:
-            try:
-                print(f'{self.year} {self.team} stats against the {other_team}\n' +\
-                    f'{wins}-{losses} ({wins/played:#.3}) in {played} games. \n' +\
-                    f'{home_wins}-{home_losses} ({home_wins/home_played:#.3}) in {home_played} games at home. \n' +\
-                    f'{away_wins}-{away_losses} ({away_wins/away_played:#.3}) in {away_played} games on the road.\n')
-            except ZeroDivisionError:
-                print(f'{self.year} {self.team} stats against the {other_team}\n' +\
-                    f'{wins}-{losses} in {played} games. \n' +\
-                    f'{home_wins}-{home_losses} in {home_played} games at home. \n' +\
-                    f'{away_wins}-{away_losses} in {away_played} games on the road.\n')
+        # if debug:
+        #     try:
+        #         print(f'#self.year} {self.team} stats against the {other_team}\n' +\
+        #             f'{wins}-{losses} ({wins/played:#.3}) in {played} games. \n' +\
+        #             f'{home_wins}-{home_losses} ({home_wins/home_played:#.3}) in {home_played} games at home. \n' +\
+        #             f'{away_wins}-{away_losses} ({away_wins/away_played:#.3}) in {away_played} games on the road.\n')
+        #     except ZeroDivisionError:
+        #         print(f'{self.year} {self.team} stats against the {other_team}\n' +\
+        #             f'{wins}-{losses} in {played} games. \n' +\
+        #             f'{home_wins}-{home_losses} in {home_played} games at home. \n' +\
+        #             f'{away_wins}-{away_losses} in {away_played} games on the road.\n')
 
         self.against[other_team] = {
             'wins'          :   wins,
