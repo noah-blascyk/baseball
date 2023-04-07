@@ -7,7 +7,7 @@ import pickle
 from os.path import exists
 
 debug = True
-rescrape = False
+rescrape = True
 
 class Game:
     ''' 
@@ -106,10 +106,18 @@ class GameParser(HTMLParser):
             pass
         elif self.away_team_process:
             self.away_team = data
+            if self.away_team == "LA Angels of Anaheim":
+                self.away_team = "Los Angeles Angels"
+            if self.away_team == "Florida Marlins":
+                self.away_team = "Miami Marlins"
             self.away_team_process = False
             self.away_team_done = True
         elif self.home_team_process:
             self.home_team = data
+            if self.home_team == "LA Angels of Anaheim":
+                self.home_team = "Los Angeles Angels"
+            if self.home_team == "Florida Marlins":
+                self.home_team = "Miami Marlins"
             self.home_team_process = False
         elif not self.away_score_done:
             for i in data:
@@ -293,31 +301,31 @@ class LeagueSeason(HTMLParser):
         "LOS":  "Los Angeles Dodgers"
     }
 
-    def __init__(self, year: int = 2021, home_field_factor: float = 0.0435044, k: float = 10):
+    def __init__(self, year: int = 2022, home_field_factor: float = 0.0435044, k: float = 10):
         self.year               = year
         self.dates              = []
         self.simple_elo         = {}
-        self.sched_url          = f'https://baseball-reference.com/leagues/MLB/{self.year}-schedule.shtml'
-        self.sched_html         = requests.get(self.sched_url).text
-        # Remove all the newlines
-        sched_html = ''
-        for i in self.sched_html:
-            if i != '\n':
-                sched_html += i
-
-        self.sched_html = sched_html
-        self.convert_charrefs   = True
-        self.date_process       = False
-        self.game_process       = False
-        self.reset()
 
         if exists(f"./historical scraped data/season-{self.year}.bdd") and not rescrape and not self.year == 2022:
             file = open(f"./historical scraped data/season-{self.year}.bdd", "rb")
-            print(f"found data on file for the {self.year} season!")
+            # print(f"found data on file for the {self.year} season!")
             tmp_season = pickle.load(file)
             self.dates = tmp_season.dates
             self.simple_elo = tmp_season.simple_elo
         else:
+            self.sched_url          = f'https://baseball-reference.com/leagues/MLB/{self.year}-schedule.shtml'
+            self.sched_html         = requests.get(self.sched_url).text
+            # Remove all the newlines
+            sched_html = ''
+            for i in self.sched_html:
+                if i != '\n':
+                    sched_html += i
+
+            self.sched_html = sched_html
+            self.convert_charrefs   = True
+            self.date_process       = False
+            self.game_process       = False
+            self.reset()
             self.scrape()
             if not exists(f"./historical scraped data/season-{self.year}.bdd"):
                 file = open(f"./historical scraped data/season-{self.year}.bdd", "xb")
@@ -328,7 +336,8 @@ class LeagueSeason(HTMLParser):
         file.close()
 
         self.calcLines(home_field_factor, k)
-        # self.addLines()
+        if year != 2022:
+            self.addLines()
         self.calcRecord()
 
 
@@ -489,7 +498,7 @@ class LeagueSeason(HTMLParser):
 
     def addLines(self):
         counter = True
-        if self.year != 2021:
+        if self.year != 2022 and self.year > 2009:
             with open(f"./historical odds/mlb odds {self.year}.csv") as csvfile:
                 odds_list = csv.reader(csvfile)
                 for row in odds_list:
@@ -529,10 +538,17 @@ class LeagueSeason(HTMLParser):
                                         game.away_open_prob = 1/(away_open / 100 + 1) if away_open > 0 else 1/(100 / abs(away_open) + 1)
                                         game.away_close_prob = 1/(away_close / 100 + 1) if away_close > 0 else 1/(100 / abs(away_close) + 1)
 
-                                        if (game.home_prob - .1) > game.home_open_prob:
+                                        home_adv_open = game.home_prob / game.home_open_prob - 1
+                                        away_adv_open = game.away_prob / game.away_open_prob - 1
+                                        home_adv_close = game.home_prob / game.home_close_prob - 1
+                                        away_adv_close = game.home_prob / game.away_close_prob - 1
+
+                                        if home_adv_open > 0:
                                             game.choice_open = "H"
-                                        elif (game.away_prob - .1) > game.away_open_prob:
+                                            bet_amt_open = home_adv_open / (1 / game.home_open_prob - 1)
+                                        elif away_adv_open > 0:
                                             game.choice_open = "A"
+                                            bet_amt_open = away_adv_open / (1 / game.away_open_prob - 1)
                                         else:
                                             game.choice_open = "N"
 
@@ -542,10 +558,6 @@ class LeagueSeason(HTMLParser):
                                             game.choice_close = "A"
                                         else:
                                             game.choice_close = "N"
-
-                                        # if date.month_int < 7 or date.month_int > 9:
-                                        #     game.choice_open = "N"
-                                        #     game.choice_close = "N"
 
                                         if game.choice_open == "H":
                                             if game.winner == game.home_team:
@@ -676,18 +688,19 @@ class TeamSeason:
                         else:
                             pass
 
-            if not exists(f"./historical scraped data/team data {year}/{team}.tmd"):
+            if not exists(f"./historical scraped data/team data {year}/{team}.tmd") and year != 2022:
                 file = open(f"./historical scraped data/team data {year}/{team}.tmd", "xb")
 
-            else:
+            elif year != 2022:
                 file = open(f"./historical scraped data/team data {year}/{team}.tmd", "wb")
 
-            pickle.dump(self, file)
+            if year != 2022:
+                pickle.dump(self, file)
 
         else:
             self.year = year
             file = open(f"./historical scraped data/team data {year}/{team}.tmd", "rb")
-            print(f"Found data on file for the {year} {team}")
+            # print(f"Found data on file for the {year} {team}")
             tmp = pickle.load(file)
             self.team = team
             self.wins = tmp.wins
@@ -705,8 +718,9 @@ class TeamSeason:
             self.home_win_pct = tmp.home_win_pct
             self.away_win_pct = tmp.away_win_pct
 
-        file.close()
-        print(self)
+        if year != 2022:
+            file.close()
+        # print(self)
 
 
     def __str__(self):
